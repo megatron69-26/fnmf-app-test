@@ -399,3 +399,62 @@ object CandleTimeFormatter {
         return timeStr
     }
 }
+
+/**
+ * Kết quả tính toán dải trục Y cho biểu đồ nến.
+ */
+data class YAxisRangeResult(
+    val isCustomRange: Boolean,
+    val axisMinimum: Float = 0f,
+    val axisMaximum: Float = 0f
+)
+
+/**
+ * Chính sách điều chỉnh dải hiển thị trục Y để tránh chia cho 0
+ * hoặc nến bị kéo dãn tràn màn hình khi thị trường đứng giá.
+ */
+object ChartAxisPolicy {
+    fun calculateYAxisRange(yMin: Float, yMax: Float): YAxisRangeResult {
+        if (yMax <= 0f) return YAxisRangeResult(isCustomRange = false)
+        val minDelta = maxOf(0.0001f, yMax * 0.0002f)
+        return if (yMax - yMin < minDelta) {
+            val mid = (yMax + yMin) / 2f
+            YAxisRangeResult(
+                isCustomRange = true,
+                axisMinimum = mid - minDelta,
+                axisMaximum = mid + minDelta
+            )
+        } else {
+            YAxisRangeResult(isCustomRange = false)
+        }
+    }
+}
+
+/**
+ * Chính sách khởi tạo và quản lý chuỗi nến biểu đồ thời gian thực.
+ */
+object ChartSeriesPolicy {
+    fun createSingleCandleDto(event: BinanceKlineEvent): CandleDto {
+        return CandleDto(
+            time = CandleTimeFormatter.formatDateTime(event.openTime),
+            open = event.open,
+            high = event.high,
+            low = event.low,
+            close = event.close,
+            volume = event.volume,
+            openTime = event.openTime,
+            isClosed = event.isClosed
+        )
+    }
+
+    /**
+     * Đồng bộ danh sách nến an toàn, ngăn ngừa triệt để lỗi tự xóa danh sách
+     * khi đối tượng truyền vào là cùng một tham chiếu với currentCandles.
+     */
+    fun safeSyncCandles(targetList: MutableList<CandleDto>, sourceCandles: List<CandleDto>) {
+        if (targetList !== sourceCandles) {
+            targetList.clear()
+            targetList.addAll(sourceCandles)
+        }
+    }
+}

@@ -30,7 +30,9 @@ import com.example.nhumonglenh.ui.trading.AuthHeaderFactory
 import com.example.nhumonglenh.ui.trading.AuthHttpPolicy
 import com.example.nhumonglenh.ui.trading.CandleFallbackPolicy
 import com.example.nhumonglenh.ui.trading.CandleReloadPolicy
+import com.example.nhumonglenh.ui.trading.ChartAxisPolicy
 import com.example.nhumonglenh.ui.trading.ChartLabelFormatter
+import com.example.nhumonglenh.ui.trading.ChartSeriesPolicy
 import com.example.nhumonglenh.ui.trading.MarketDataProviderPolicy
 import com.example.nhumonglenh.ui.trading.MarketStreamHelper
 import com.example.nhumonglenh.ui.trading.OrderTicketBottomSheet
@@ -69,9 +71,11 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 import android.os.Handler
 import android.os.Looper
+import com.example.nhumonglenh.ui.trading.BinanceKlineEvent
 import com.example.nhumonglenh.ui.trading.BinanceKlineParser
 import com.example.nhumonglenh.ui.trading.CandleSeriesReducer
 import com.example.nhumonglenh.ui.trading.CandleTimeFormatter
+import com.example.nhumonglenh.ui.trading.FnmfCandleStickChartRenderer
 import com.example.nhumonglenh.ui.trading.MarketSymbolMatcher
 
 /**
@@ -98,8 +102,11 @@ class TradingFragment : Fragment() {
     private val currentCandles = ArrayList<CandleDto>()
     private val candleEntries = ArrayList<CandleEntry>()
     private val timeLabels = ArrayList<String>()
+    private val candleTimeLabelsMap = HashMap<Int, String>()
     private var candleDataSet: CandleDataSet? = null
     private var loadedCandleSymbol: String? = null
+    private var nextCandleXIndex: Float = 0f
+    private val maxCandleHistory: Int = DEFAULT_MAX_CANDLES
 
     // Quản lý mã tài sản đang chọn
     private var currentSymbol: String = "BTCUSDT"
@@ -803,6 +810,14 @@ class TradingFragment : Fragment() {
             isDoubleTapToZoomEnabled = true
             setPinchZoom(true)
 
+            // Custom renderer vẽ nến doji / đứng giá rõ nét với độ dày tối thiểu minDojiStrokePx
+            renderer = FnmfCandleStickChartRenderer(
+                chart = this,
+                animator = this.animator,
+                viewPortHandler = this.viewPortHandler,
+                minDojiStrokePx = 4.0f
+            )
+
             // Trục X (Thời gian)
             xAxis.apply {
                 position = XAxis.XAxisPosition.BOTTOM
@@ -816,8 +831,8 @@ class TradingFragment : Fragment() {
                 textColor = ContextCompat.getColor(ctx, R.color.tv_text_secondary)
                 gridColor = ContextCompat.getColor(ctx, R.color.tv_border)
                 setDrawAxisLine(false)
-                resetAxisMinimum()
-                resetAxisMaximum()
+                spaceTop = 15f
+                spaceBottom = 15f
             }
 
             // Tắt trục Y bên Phải
@@ -847,6 +862,8 @@ class TradingFragment : Fragment() {
         currentCandles.clear()
         candleEntries.clear()
         timeLabels.clear()
+        candleTimeLabelsMap.clear()
+        nextCandleXIndex = 0f
         candleDataSet = null
         loadedCandleSymbol = null
 
@@ -1148,6 +1165,8 @@ class TradingFragment : Fragment() {
             currentCandles.clear()
             candleEntries.clear()
             timeLabels.clear()
+            candleTimeLabelsMap.clear()
+            nextCandleXIndex = 0f
             b.candleChart.clear()
             b.tvStateMessage.text = getString(R.string.trading_err_no_candles)
             b.tvStateMessage.visibility = View.VISIBLE
@@ -1161,17 +1180,20 @@ class TradingFragment : Fragment() {
         val b = binding ?: return
         val ctx = context ?: return
 
-        currentCandles.clear()
-        currentCandles.addAll(candles)
+        ChartSeriesPolicy.safeSyncCandles(currentCandles, candles)
 
         candleEntries.clear()
         timeLabels.clear()
+        candleTimeLabelsMap.clear()
 
         for (i in candles.indices) {
             val c = candles[i]
             candleEntries.add(CandleEntry(i.toFloat(), c.high.toFloat(), c.low.toFloat(), c.open.toFloat(), c.close.toFloat()))
-            timeLabels.add(CandleTimeFormatter.formatCandleAxisLabel(c))
+            val label = CandleTimeFormatter.formatCandleAxisLabel(c)
+            timeLabels.add(label)
+            candleTimeLabelsMap[i] = label
         }
+        nextCandleXIndex = candles.size.toFloat()
 
         b.pbLoading.visibility = View.GONE
 
@@ -1187,11 +1209,8 @@ class TradingFragment : Fragment() {
 
         b.candleChart.xAxis.valueFormatter = object : com.github.mikephil.charting.formatter.ValueFormatter() {
             override fun getFormattedValue(value: Float): String {
-                val index = value.toInt()
-                if (index in timeLabels.indices) {
-                    return timeLabels[index]
-                }
-                return ""
+                val index = Math.round(value)
+                return candleTimeLabelsMap[index] ?: ""
             }
         }
 
@@ -1199,23 +1218,43 @@ class TradingFragment : Fragment() {
         val dataSet = CandleDataSet(candleEntries, datasetLabel).apply {
             setDrawIcons(false)
             shadowColor = ContextCompat.getColor(ctx, R.color.tv_text_secondary)
-            shadowWidth = 1.2f
+            shadowWidth = 1.5f
             decreasingColor = ContextCompat.getColor(ctx, R.color.tv_red)
             decreasingPaintStyle = Paint.Style.FILL
             increasingColor = ContextCompat.getColor(ctx, R.color.tv_green)
             increasingPaintStyle = Paint.Style.FILL
-            neutralColor = ContextCompat.getColor(ctx, R.color.tv_text_secondary)
+            neutralColor = ContextCompat.getColor(ctx, R.color.white)
             setDrawValues(false)
             highLightColor = ContextCompat.getColor(ctx, R.color.white)
+            barSpace = 0.1f
+            shadowColorSameAsCandle = true
         }
 
         candleDataSet = dataSet
         b.candleChart.data = CandleData(dataSet)
+        adjustChartYAxisRange(dataSet)
+        b.candleChart.setVisibleXRangeMaximum(VIEWPORT_VISIBLE_MAX_CANDLES)
+        b.candleChart.setVisibleXRangeMinimum(VIEWPORT_VISIBLE_MIN_CANDLES)
+        if (nextCandleXIndex > 0f) {
+            b.candleChart.moveViewToX(nextCandleXIndex - 1f)
+        }
         b.candleChart.invalidate()
 
         if (currentAssetPrice == null && candles.isNotEmpty()) {
             val last = candles.last()
             updateLivePriceDisplay(last.close, last.open)
+        }
+    }
+
+    private fun adjustChartYAxisRange(dataSet: CandleDataSet) {
+        val chart = binding?.candleChart ?: return
+        val range = ChartAxisPolicy.calculateYAxisRange(dataSet.yMin, dataSet.yMax)
+        if (range.isCustomRange) {
+            chart.axisLeft.axisMinimum = range.axisMinimum
+            chart.axisLeft.axisMaximum = range.axisMaximum
+        } else {
+            chart.axisLeft.resetAxisMinimum()
+            chart.axisLeft.resetAxisMaximum()
         }
     }
 
@@ -1343,11 +1382,7 @@ class TradingFragment : Fragment() {
             return
         }
 
-        val updatedSeries = CandleSeriesReducer.reduce(currentCandles, event, maxCandles = 30)
-        currentCandles.clear()
-        currentCandles.addAll(updatedSeries)
-
-        rebuildCandleChartFromSeries()
+        updateCandleChartInPlace(event)
 
         updateLivePriceDisplay(event.close, event.open)
     }
@@ -1413,63 +1448,106 @@ class TradingFragment : Fragment() {
         updateTradeActionsState()
     }
 
-    private fun rebuildCandleChartFromSeries() {
+    /**
+     * Cập nhật biểu đồ nến tại chỗ (in-place dataset update) tối ưu 60 FPS:
+     * - Cùng giây (event.openTime == lastOpenTime): Cập nhật OHLC của CandleEntry cuối, gọi calcMinMax và invalidate (0 allocation).
+     * - Sang giây mới (event.openTime > lastOpenTime): Thêm CandleEntry mới với mốc X tăng đơn điệu (monotonic X),
+     *   loại bỏ nến cũ nhất nếu vượt quá giới hạn bộ đệm (maxCandles = 90).
+     * - Giữ nguyên ma trận zoom/pan của người dùng; chỉ tự động cuộn (auto-scroll) nếu đang xem ở mép phải biểu đồ.
+     */
+    private fun updateCandleChartInPlace(event: BinanceKlineEvent) {
         val b = binding ?: return
-        if (currentCandles.isEmpty()) return
-
-        // Save viewport state before rebuild
         val chart = b.candleChart
-        val wasAutoScaling = !chart.isScaleXEnabled || chart.viewPortHandler.let {
-            it.contentWidth() <= 0f
-        }
-        val savedMatrix = if (!wasAutoScaling && chart.data != null) {
-            android.graphics.Matrix(chart.viewPortHandler.matrixTouch)
-        } else null
+        val dataSet = candleDataSet
+        val chartData = chart.candleData ?: chart.data
 
-        // Rebuild entries and labels from currentCandles
-        candleEntries.clear()
-        timeLabels.clear()
-        for (i in currentCandles.indices) {
-            val c = currentCandles[i]
-            candleEntries.add(CandleEntry(
-                i.toFloat(),
-                c.high.toFloat(),
-                c.low.toFloat(),
-                c.open.toFloat(),
-                c.close.toFloat()
-            ))
-            timeLabels.add(CandleTimeFormatter.formatCandleAxisLabel(c))
+        if (dataSet == null || chartData == null || currentCandles.isEmpty()) {
+            val single = ChartSeriesPolicy.createSingleCandleDto(event)
+            renderCandleChart(listOf(single), currentSymbol)
+            return
         }
 
-        // Rebuild dataset
-        val dataSet = CandleDataSet(candleEntries, ChartLabelFormatter.formatChartDatasetLabel(currentSymbol, "1s")).apply {
-            color = ContextCompat.getColor(requireContext(), R.color.tv_text_secondary)
-            shadowColor = ContextCompat.getColor(requireContext(), R.color.tv_text_secondary)
-            shadowWidth = 0.7f
-            decreasingColor = ContextCompat.getColor(requireContext(), R.color.tv_red)
-            decreasingPaintStyle = Paint.Style.FILL
-            increasingColor = ContextCompat.getColor(requireContext(), R.color.tv_green)
-            increasingPaintStyle = Paint.Style.FILL
-            neutralColor = ContextCompat.getColor(requireContext(), R.color.tv_text_secondary)
-            setDrawValues(false)
-        }
-        candleDataSet = dataSet
+        val lastCandle = currentCandles.last()
+        val lastOpenTime = lastCandle.openTime ?: CandleTimeFormatter.parseTimeToMillis(lastCandle.time)
 
-        chart.data = CandleData(dataSet)
-        chart.xAxis.valueFormatter = object : com.github.mikephil.charting.formatter.ValueFormatter() {
-            override fun getFormattedValue(value: Float): String {
-                val idx = value.toInt()
-                return if (idx in timeLabels.indices) timeLabels[idx] else ""
+        if (event.openTime == lastOpenTime) {
+            // CÙNG GIÂY: Cập nhật cây nến cuối tại chỗ (không cấp phát đối tượng mới)
+            val updatedLast = lastCandle.copy(
+                open = event.open,
+                high = event.high,
+                low = event.low,
+                close = event.close,
+                volume = event.volume,
+                openTime = event.openTime,
+                isClosed = event.isClosed
+            )
+            currentCandles[currentCandles.size - 1] = updatedLast
+
+            if (dataSet.entryCount > 0) {
+                val lastEntry = dataSet.getEntryForIndex(dataSet.entryCount - 1)
+                lastEntry.open = event.open.toFloat()
+                lastEntry.close = event.close.toFloat()
+                lastEntry.high = event.high.toFloat()
+                lastEntry.low = event.low.toFloat()
+
+                dataSet.calcMinMax()
+                adjustChartYAxisRange(dataSet)
+                chartData.notifyDataChanged()
+                chart.notifyDataSetChanged()
+                chart.invalidate()
             }
-        }
+        } else if (event.openTime > lastOpenTime) {
+            // SANG GIÂY MỚI: Thêm nến mới với mốc X tăng liên tục, giữ tối đa maxCandleHistory
+            val newCandle = CandleDto(
+                time = CandleTimeFormatter.formatDateTime(event.openTime),
+                open = event.open,
+                high = event.high,
+                low = event.low,
+                close = event.close,
+                volume = event.volume,
+                openTime = event.openTime,
+                isClosed = event.isClosed
+            )
+            currentCandles.add(newCandle)
+            if (currentCandles.size > maxCandleHistory) {
+                currentCandles.removeAt(0)
+            }
 
-        // Restore viewport if user was zoomed/panned
-        if (savedMatrix != null) {
-            chart.viewPortHandler.refresh(savedMatrix, chart, true)
-        }
+            val newX = nextCandleXIndex
+            nextCandleXIndex += 1f
 
-        chart.notifyDataSetChanged()
-        chart.invalidate()
+            val newEntry = CandleEntry(
+                newX,
+                event.high.toFloat(),
+                event.low.toFloat(),
+                event.open.toFloat(),
+                event.close.toFloat()
+            )
+            dataSet.addEntry(newEntry)
+
+            val label = CandleTimeFormatter.formatCandleAxisLabel(newCandle)
+            candleTimeLabelsMap[newX.toInt()] = label
+
+            if (dataSet.entryCount > maxCandleHistory) {
+                val oldestEntry = dataSet.getEntryForIndex(0)
+                candleTimeLabelsMap.remove(oldestEntry.x.toInt())
+                dataSet.removeEntry(0)
+            }
+
+            dataSet.calcMinMax()
+            adjustChartYAxisRange(dataSet)
+            chartData.notifyDataChanged()
+            chart.notifyDataSetChanged()
+
+            // Tự động bám theo mép phải nếu người dùng không cuộn lùi về quá khứ
+            val highestVisibleX = chart.highestVisibleX
+            val wasAtRightEdge = (newX - highestVisibleX) <= 2.5f
+            if (wasAtRightEdge) {
+                chart.moveViewToX(newX)
+            }
+
+            chart.invalidate()
+        }
     }
 
     private fun updatePortfolioDisplay() {
@@ -1684,6 +1762,9 @@ class TradingFragment : Fragment() {
     companion object {
         private const val TAG = "FNMF_TradingFragment"
         const val KEY_SAVED_SYMBOL = "SAVED_MARKET_SYMBOL"
+        const val DEFAULT_MAX_CANDLES = 90
+        const val VIEWPORT_VISIBLE_MAX_CANDLES = 60f
+        const val VIEWPORT_VISIBLE_MIN_CANDLES = 15f
         val SUPPORTED_BINANCE_SYMBOLS = setOf(
             "BTCUSDT", "ETHUSDT", "XAUUSD", "BNBUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT", "DOGEUSDT"
         )

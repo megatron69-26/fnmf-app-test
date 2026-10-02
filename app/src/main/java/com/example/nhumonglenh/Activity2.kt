@@ -66,6 +66,11 @@ class Activity2 : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Đảm bảo RetrofitClient luôn nhận cấu hình server_url thực tế từ SharedPreferences
+        val netPrefs = getSharedPreferences(NetworkConfig.PREFS_NAME, Context.MODE_PRIVATE)
+        val activeServerUrl = NetworkConfig.getOrMigrateServerUrl(netPrefs)
+        RetrofitClient.updateBaseUrl(activeServerUrl)
+
         // Cold start auth check: Nếu chưa đăng nhập hoặc hết phiên, chuyển hướng về màn hình đăng nhập
         if (!AuthSessionManager.isLoggedIn(this)) {
             val loginIntent = Intent(this, Activity1::class.java).apply {
