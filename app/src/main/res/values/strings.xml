@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">FNMF</string>
+    <string name="app_name">FNMF Test</string>
 
     <!-- Navigation & Titles -->
     <string name="nav_title_trading">Giao dịch</string>

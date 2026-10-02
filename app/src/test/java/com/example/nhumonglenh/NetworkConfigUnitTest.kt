@@ -10,66 +10,57 @@ class NetworkConfigUnitTest {
 
     @Test
     fun testDefaultServerUrl() {
-        assertEquals("https://fnmf-backend-production.up.railway.app/", NetworkConfig.DEFAULT_SERVER_URL)
-        assertEquals(3, NetworkConfig.SERVER_CONFIG_VERSION)
+        assertEquals("http://10.0.2.2:8083/", NetworkConfig.DEFAULT_SERVER_URL)
+        assertEquals(100, NetworkConfig.SERVER_CONFIG_VERSION)
     }
 
     @Test
     fun testDecideServerUrl_nullOrBlank() {
         val (url1, ver1) = NetworkConfig.decideServerUrl(null, 0)
         assertEquals(NetworkConfig.DEFAULT_SERVER_URL, url1)
-        assertEquals(3, ver1)
+        assertEquals(100, ver1)
 
         val (url2, ver2) = NetworkConfig.decideServerUrl("", 0)
         assertEquals(NetworkConfig.DEFAULT_SERVER_URL, url2)
-        assertEquals(3, ver2)
+        assertEquals(100, ver2)
 
         val (url3, ver3) = NetworkConfig.decideServerUrl("   ", 1)
         assertEquals(NetworkConfig.DEFAULT_SERVER_URL, url3)
-        assertEquals(3, ver3)
+        assertEquals(100, ver3)
     }
 
     @Test
-    fun testDecideServerUrl_legacyTargets() {
-        val legacyUrls = listOf(
-            "http://172.18.97.109:8083/",
-            "http://172.18.97.109:8083",
-            "172.18.97.109:8083",
-            "http://10.174.64.109:8083/",
-            "http://10.174.64.59:8083/",
-            "http://10.0.2.2:8083/",
-            "http://localhost:8083/",
-            "http://127.0.0.1:8083/",
-            "http://localhost:3000",
-            "http://10.174.64.109:3000/"
+    fun testDecideServerUrl_strictlyBlocksRailwayProduction() {
+        val railwayUrls = listOf(
+            "https://fnmf-backend-production.up.railway.app/",
+            "https://fnmf-backend-production.up.railway.app",
+            "http://fnmf-backend-production.up.railway.app:8080/",
+            "https://my-service.railway.app/"
         )
 
-        for (legacy in legacyUrls) {
-            val (resolved, ver) = NetworkConfig.decideServerUrl(legacy, 0)
-            assertEquals("Legacy target should migrate to Railway: $legacy", NetworkConfig.DEFAULT_SERVER_URL, resolved)
-            assertEquals(3, ver)
+        for (url in railwayUrls) {
+            val (resolved, ver) = NetworkConfig.decideServerUrl(url, 0)
+            assertEquals("Railway production must be strictly blocked and reverted to test default: $url",
+                NetworkConfig.DEFAULT_SERVER_URL, resolved)
+            assertEquals(100, ver)
         }
     }
 
     @Test
-    fun testDecideServerUrl_customHttpsIsReplacedByProductionCloud() {
-        val custom1 = "https://custom-domain.example.com/"
-        val (url1, ver1) = NetworkConfig.decideServerUrl(custom1, 0)
-        assertEquals(NetworkConfig.DEFAULT_SERVER_URL, url1)
-        assertEquals(3, ver1)
+    fun testDecideServerUrl_preservesCustomTestServers() {
+        val testServers = listOf(
+            "http://192.168.1.15:8083/" to "http://192.168.1.15:8083/",
+            "http://192.168.1.15:8083" to "http://192.168.1.15:8083/",
+            "http://10.0.2.2:8083/" to "http://10.0.2.2:8083/",
+            "http://localhost:8083" to "http://localhost:8083/",
+            "https://test-node10.ngrok-free.app/" to "https://test-node10.ngrok-free.app/"
+        )
 
-        val custom2 = "https://custom-domain.example.com"
-        val (url2, ver2) = NetworkConfig.decideServerUrl(custom2, 0)
-        assertEquals(NetworkConfig.DEFAULT_SERVER_URL, url2)
-        assertEquals(3, ver2)
-    }
-
-    @Test
-    fun testDecideServerUrl_oldConfiguredVersionIsReplaced() {
-        val custom = "https://my-cloud-api.org/"
-        val (url, ver) = NetworkConfig.decideServerUrl(custom, 2)
-        assertEquals(NetworkConfig.DEFAULT_SERVER_URL, url)
-        assertEquals(3, ver)
+        for ((input, expected) in testServers) {
+            val (resolved, ver) = NetworkConfig.decideServerUrl(input, 50)
+            assertEquals("Custom test URL should be accepted: $input", expected, resolved)
+            assertEquals(100, ver)
+        }
     }
 
     @Test
@@ -83,8 +74,8 @@ class NetworkConfigUnitTest {
 
         for (invalid in invalidInputs) {
             val (resolved, ver) = NetworkConfig.decideServerUrl(invalid, 0)
-            assertEquals("Invalid input should fallback to Railway: $invalid", NetworkConfig.DEFAULT_SERVER_URL, resolved)
-            assertEquals(3, ver)
+            assertEquals("Invalid input should fallback to test default: $invalid", NetworkConfig.DEFAULT_SERVER_URL, resolved)
+            assertEquals(100, ver)
         }
     }
 
@@ -95,19 +86,15 @@ class NetworkConfigUnitTest {
         assertEquals("https://example.com/", NetworkConfig.normalizeUrl("  https://example.com  "))
         assertEquals(NetworkConfig.DEFAULT_SERVER_URL, NetworkConfig.normalizeUrl(""))
         assertEquals(NetworkConfig.DEFAULT_SERVER_URL, NetworkConfig.normalizeUrl("   "))
+        assertEquals(NetworkConfig.DEFAULT_SERVER_URL, NetworkConfig.normalizeUrl("https://fnmf-backend-production.up.railway.app/"))
     }
 
     @Test
-    fun testIsLegacyUrl() {
-        assertTrue(NetworkConfig.isLegacyUrl("http://172.18.97.109:8083/"))
-        assertTrue(NetworkConfig.isLegacyUrl("http://10.174.64.109:8083/"))
-        assertTrue(NetworkConfig.isLegacyUrl("http://10.174.64.59:8083/"))
-        assertTrue(NetworkConfig.isLegacyUrl("http://10.0.2.2:8083/"))
-        assertTrue(NetworkConfig.isLegacyUrl("http://localhost:8083/"))
-        assertTrue(NetworkConfig.isLegacyUrl("http://127.0.0.1:8083/"))
-        assertTrue(NetworkConfig.isLegacyUrl("http://any-domain:3000/"))
-
-        assertFalse(NetworkConfig.isLegacyUrl("https://fnmf-backend-production.up.railway.app/"))
-        assertFalse(NetworkConfig.isLegacyUrl("https://custom-server.com/"))
+    fun testIsBlockedProductionUrl() {
+        assertTrue(NetworkConfig.isBlockedProductionUrl("https://fnmf-backend-production.up.railway.app/"))
+        assertTrue(NetworkConfig.isBlockedProductionUrl("http://custom.railway.app"))
+        assertFalse(NetworkConfig.isBlockedProductionUrl("http://192.168.1.15:8083/"))
+        assertFalse(NetworkConfig.isBlockedProductionUrl("http://localhost:8083/"))
+        assertFalse(NetworkConfig.isBlockedProductionUrl(null))
     }
 }

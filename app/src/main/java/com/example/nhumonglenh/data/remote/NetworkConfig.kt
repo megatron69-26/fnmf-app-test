@@ -16,8 +16,12 @@ object NetworkConfig {
     const val KEY_SERVER_URL = "server_url"
     const val KEY_CONFIG_VERSION = "server_config_version"
 
-    const val DEFAULT_SERVER_URL = "https://fnmf-backend-production.up.railway.app/"
-    const val SERVER_CONFIG_VERSION = 3
+    // Môi trường Test: Mặc định trỏ đến backend thử nghiệm cục bộ (port 8083)
+    // Tuyệt đối không trỏ đến Railway Production
+    const val DEFAULT_SERVER_URL = "http://10.0.2.2:8083/"
+    const val SERVER_CONFIG_VERSION = 100
+
+    const val BLOCKED_PRODUCTION_KEYWORD = "railway.app"
 
     val LEGACY_HOSTS = listOf(
         "172.18.97.109",
@@ -30,11 +34,20 @@ object NetworkConfig {
     )
 
     /**
+     * Kiểm tra URL có chứa domain Railway production hay không để chặn tuyệt đối.
+     */
+    fun isBlockedProductionUrl(url: String?): Boolean {
+        if (url.isNullOrBlank()) return false
+        return url.lowercase().contains(BLOCKED_PRODUCTION_KEYWORD)
+    }
+
+    /**
      * Chuẩn hoá URL: loại bỏ khoảng trắng và luôn đảm bảo kết thúc bằng dấu /
+     * Nếu URL trỏ về Railway production, cưỡng chế chuyển về DEFAULT_SERVER_URL thử nghiệm.
      */
     fun normalizeUrl(url: String): String {
         val trimmed = url.trim()
-        if (trimmed.isEmpty()) return DEFAULT_SERVER_URL
+        if (trimmed.isEmpty() || isBlockedProductionUrl(trimmed)) return DEFAULT_SERVER_URL
         return if (trimmed.endsWith("/")) trimmed else "$trimmed/"
     }
 
@@ -59,11 +72,31 @@ object NetworkConfig {
     }
 
     /**
-     * Bản production chỉ sử dụng Railway Cloud. Mọi URL đã lưu từ các bản cũ,
-     * bao gồm URL LAN và URL tuỳ chỉnh, đều được thay bằng URL chính thức.
+     * Bản test cho phép cấu hình URL backend thử nghiệm tùy chỉnh (LAN IP, tunnel, Note10+).
+     * Tuyệt đối chặn không cho sử dụng Railway Production.
      */
     fun decideServerUrl(savedUrl: String?, savedConfigVersion: Int): Pair<String, Int> {
-        return Pair(DEFAULT_SERVER_URL, SERVER_CONFIG_VERSION)
+        if (savedUrl.isNullOrBlank()) {
+            return Pair(DEFAULT_SERVER_URL, SERVER_CONFIG_VERSION)
+        }
+        val normalized = normalizeUrl(savedUrl)
+        if (isBlockedProductionUrl(normalized) || !isValidUrl(normalized)) {
+            return Pair(DEFAULT_SERVER_URL, SERVER_CONFIG_VERSION)
+        }
+        return Pair(normalized, SERVER_CONFIG_VERSION)
+    }
+
+    /**
+     * Cập nhật URL server thử nghiệm một cách an toàn vào SharedPreferences.
+     */
+    fun setTestServerUrl(prefs: SharedPreferences, url: String): Boolean {
+        if (isBlockedProductionUrl(url) || !isValidUrl(url)) return false
+        val normalized = normalizeUrl(url)
+        prefs.edit()
+            .putString(KEY_SERVER_URL, normalized)
+            .putInt(KEY_CONFIG_VERSION, SERVER_CONFIG_VERSION)
+            .apply()
+        return true
     }
 
     /**

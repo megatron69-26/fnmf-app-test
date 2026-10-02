@@ -189,9 +189,9 @@ class EmailAuthUnitTest {
     // 5. TEST RAILWAY DEFAULT SERVER URL
     // -------------------------------------------------------------
     @Test
-    fun testDefaultServerUrl_isRailwayCloud() {
+    fun testDefaultServerUrl_isTestBackend() {
         assertEquals(
-            "https://fnmf-backend-production.up.railway.app/",
+            "http://10.0.2.2:8083/",
             NetworkConfig.DEFAULT_SERVER_URL
         )
     }
