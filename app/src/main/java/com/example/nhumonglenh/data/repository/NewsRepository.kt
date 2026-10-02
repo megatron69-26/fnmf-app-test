@@ -481,6 +481,9 @@ class NewsRepository internal constructor(private val context: Context) {
         // Lọc nghiêm ngặt theo NewsLocalizationPolicy
         val validEntities = cachedEntities.filter {
             com.example.nhumonglenh.ui.news.NewsLocalizationPolicy.isEntityFullyLocalized(it)
+        }.sortedByDescending {
+            // Repair ordering for rows cached by older builds with an unparsed epoch of 0.
+            effectivePublishedEpoch(it.publishedAtRaw, it.publishedAt)
         }
 
         return validEntities.map { entity ->
@@ -572,6 +575,10 @@ class NewsRepository internal constructor(private val context: Context) {
 
         fun createForTesting(context: Context): NewsRepository = NewsRepository(context)
 
+        fun effectivePublishedEpoch(raw: String?, stored: Long): Long {
+            return parseTimeToEpoch(raw).takeIf { it > 0L } ?: stored
+        }
+
         fun parseTimeToEpoch(timeStr: String?): Long {
             if (timeStr == null || timeStr.isBlank()) return 0L
 
@@ -579,6 +586,7 @@ class NewsRepository internal constructor(private val context: Context) {
                 "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
                 "yyyy-MM-dd'T'HH:mm:ss'Z'",
                 "yyyy-MM-dd'T'HH:mm:ss",
+                "yyyy-MM-dd'T'HH:mm",
                 "yyyy-MM-dd HH:mm:ss",
                 "yyyyMMdd'T'HHmmss"
             )
