@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.util.Log
 import android.widget.Button
 import android.widget.EditText
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.example.nhumonglenh.ui.SystemBarInsets
@@ -41,10 +42,74 @@ class Activity1 : AppCompatActivity() {
         val etPassword = findViewById<EditText>(R.id.etPassword)
         val btnLogin = findViewById<Button>(R.id.btnLogin)
         val btnRegister = findViewById<Button>(R.id.btnRegister)
+        val btnTestServerConfig = findViewById<Button>(R.id.btnTestServerConfig)
+        val tvCurrentServerStatus = findViewById<TextView>(R.id.tvCurrentServerStatus)
 
-        // 1. Khóa ứng dụng vào Railway Cloud và dọn URL LAN/custom đã lưu từ bản cũ.
         val prefs = getSharedPreferences(NetworkConfig.PREFS_NAME, Context.MODE_PRIVATE)
-        RetrofitClient.updateBaseUrl(NetworkConfig.getOrMigrateServerUrl(prefs))
+
+        fun updateServerStatusDisplay() {
+            val currentUrl = prefs.getString(NetworkConfig.KEY_SERVER_URL, null)
+            val isConfigured = NetworkConfig.isTestServerConfigured(prefs)
+            if (isConfigured && !currentUrl.isNullOrBlank()) {
+                tvCurrentServerStatus.text = "Server: $currentUrl"
+                tvCurrentServerStatus.setTextColor(android.graphics.Color.parseColor("#4CAF50"))
+            } else {
+                tvCurrentServerStatus.text = "Server: Chưa cấu hình (Bấm để cài đặt)"
+                tvCurrentServerStatus.setTextColor(android.graphics.Color.parseColor("#FFA726"))
+            }
+        }
+
+        fun showServerConfigDialog() {
+            val input = EditText(this).apply {
+                hint = "https://your-tunnel-hostname.com/"
+                setText(prefs.getString(NetworkConfig.KEY_SERVER_URL, "") ?: "")
+                setSelection(text.length)
+                setPadding(40, 30, 40, 30)
+                setTextColor(android.graphics.Color.WHITE)
+                setHintTextColor(android.graphics.Color.parseColor("#787B86"))
+            }
+
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("⚙️ Cấu hình Backend Note10+")
+                .setMessage("Nhập URL máy chủ thử nghiệm (ưu tiên HTTPS tunnel như https://...):\n\nLƯU Ý: Tuyệt đối không trỏ về Railway Production.")
+                .setView(input)
+                .setPositiveButton("Lưu") { _, _ ->
+                    val enteredUrl = input.text.toString().trim()
+                    val (success, message) = NetworkConfig.validateAndSetTestServerUrl(prefs, enteredUrl)
+                    if (success) {
+                        val activeUrl = NetworkConfig.getOrMigrateServerUrl(prefs)
+                        RetrofitClient.updateBaseUrl(activeUrl)
+                        updateServerStatusDisplay()
+                        Toast.makeText(this, "Đã lưu server test: $activeUrl", Toast.LENGTH_SHORT).show()
+                        if (message != null) {
+                            androidx.appcompat.app.AlertDialog.Builder(this)
+                                .setTitle("Lưu ý kết nối")
+                                .setMessage(message)
+                                .setPositiveButton("Đã hiểu", null)
+                                .show()
+                        }
+                    } else {
+                        androidx.appcompat.app.AlertDialog.Builder(this)
+                            .setTitle("Cấu hình không hợp lệ")
+                            .setMessage(message ?: "URL không hợp lệ.")
+                            .setPositiveButton("Thử lại") { _, _ -> showServerConfigDialog() }
+                            .setNegativeButton("Hủy", null)
+                            .show()
+                    }
+                }
+                .setNegativeButton("Hủy", null)
+                .show()
+        }
+
+        btnTestServerConfig.setOnClickListener {
+            showServerConfigDialog()
+        }
+
+        // Khởi tạo hiển thị server test
+        updateServerStatusDisplay()
+        if (NetworkConfig.isTestServerConfigured(prefs)) {
+            RetrofitClient.updateBaseUrl(NetworkConfig.getOrMigrateServerUrl(prefs))
+        }
 
         // Di chuyển SharedPreferences từ saved_username sang saved_email (chạy đúng 1 lần)
         when (val migration = NetworkConfig.migrateSavedAccount(prefs)) {
@@ -83,6 +148,17 @@ class Activity1 : AppCompatActivity() {
         // 2. Xử lý ĐĂNG NHẬP
         btnLogin.setOnClickListener {
             if (loginCall != null) return@setOnClickListener
+
+            // Kiểm tra máy chủ test đã được cấu hình chưa trước khi gọi mạng
+            if (!NetworkConfig.isTestServerConfigured(prefs)) {
+                androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle("⚠️ Chưa cấu hình Server Test")
+                    .setMessage("Ứng dụng FNMF Test cần được kết nối tới Backend đang chạy trên Galaxy Note10+.\n\nVui lòng cấu hình URL máy chủ thử nghiệm trước khi đăng nhập.")
+                    .setPositiveButton("Cấu hình ngay") { _, _ -> showServerConfigDialog() }
+                    .setNegativeButton("Đóng", null)
+                    .show()
+                return@setOnClickListener
+            }
 
             val rawEmail = etEmail.text.toString().trim()
             val password = etPassword.text.toString() // Không trim mật khẩu
@@ -150,8 +226,17 @@ class Activity1 : AppCompatActivity() {
             })
         }
 
-        // 3. Mở màn hình đăng ký riêng.
+        // 3. Mở màn hình đăng ký riêng (yêu cầu cấu hình server trước).
         btnRegister.setOnClickListener {
+            if (!NetworkConfig.isTestServerConfigured(prefs)) {
+                androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle("⚠️ Chưa cấu hình Server Test")
+                    .setMessage("Vui lòng cấu hình URL máy chủ thử nghiệm trước khi tạo tài khoản.")
+                    .setPositiveButton("Cấu hình ngay") { _, _ -> showServerConfigDialog() }
+                    .setNegativeButton("Đóng", null)
+                    .show()
+                return@setOnClickListener
+            }
             startActivity(Intent(this, RegisterActivity::class.java))
         }
     }

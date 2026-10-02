@@ -86,17 +86,51 @@ object NetworkConfig {
         return Pair(normalized, SERVER_CONFIG_VERSION)
     }
 
+    const val KEY_SERVER_CONFIGURED = "server_explicitly_configured"
+
     /**
-     * Cập nhật URL server thử nghiệm một cách an toàn vào SharedPreferences.
+     * Kiểm tra xem người dùng/tester đã cấu hình URL máy chủ thử nghiệm hay chưa.
      */
-    fun setTestServerUrl(prefs: SharedPreferences, url: String): Boolean {
-        if (isBlockedProductionUrl(url) || !isValidUrl(url)) return false
-        val normalized = normalizeUrl(url)
+    fun isTestServerConfigured(prefs: SharedPreferences): Boolean {
+        if (!prefs.getBoolean(KEY_SERVER_CONFIGURED, false)) return false
+        val saved = prefs.getString(KEY_SERVER_URL, null) ?: return false
+        return !isBlockedProductionUrl(saved) && isValidUrl(saved)
+    }
+
+    /**
+     * Xác thực và lưu URL máy chủ thử nghiệm vào SharedPreferences.
+     * Trả về Pair(isSuccess, errorMessageOrWarning).
+     */
+    fun validateAndSetTestServerUrl(prefs: SharedPreferences, rawUrl: String?): Pair<Boolean, String?> {
+        val trimmed = rawUrl?.trim() ?: ""
+        if (trimmed.isEmpty()) {
+            return Pair(false, "URL máy chủ không được để trống.")
+        }
+        if (isBlockedProductionUrl(trimmed)) {
+            return Pair(false, "CẢNH BÁO AN TOÀN: Bản Test tuyệt đối không được kết nối tới Railway Production!")
+        }
+        if (!isValidUrl(trimmed)) {
+            return Pair(false, "Định dạng URL không hợp lệ. Phải bắt đầu bằng https:// hoặc http:// và có tên miền/IP.")
+        }
+        val normalized = normalizeUrl(trimmed)
         prefs.edit()
             .putString(KEY_SERVER_URL, normalized)
             .putInt(KEY_CONFIG_VERSION, SERVER_CONFIG_VERSION)
+            .putBoolean(KEY_SERVER_CONFIGURED, true)
             .apply()
-        return true
+
+        val warning = if (normalized.startsWith("http://") && !normalized.contains("10.0.2.2") && !normalized.contains("localhost")) {
+            "LƯU Ý: Android có thể chặn HTTP cleartext đối với IP qua mạng LAN nếu chưa thiết lập chứng chỉ. Khuyến nghị sử dụng HTTPS tunnel (như Cloudflare Tunnel)."
+        } else null
+
+        return Pair(true, warning)
+    }
+
+    /**
+     * Cập nhật URL server thử nghiệm một cách an toàn vào SharedPreferences (tương thích ngược).
+     */
+    fun setTestServerUrl(prefs: SharedPreferences, url: String): Boolean {
+        return validateAndSetTestServerUrl(prefs, url).first
     }
 
     /**

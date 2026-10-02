@@ -91,5 +91,26 @@
         android:text="@string/auth_btn_register"
         android:backgroundTint="#089981"
         android:textStyle="bold"
-        android:textColor="#FFFFFF"/>
+        android:textColor="#FFFFFF"
+        android:layout_marginBottom="16dp"/>
+
+    <!-- 5. CẤU HÌNH SERVER TEST ĐỘC LẬP (NOTE10+) -->
+    <Button
+        android:id="@+id/btnTestServerConfig"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:text="⚙️ Cấu hình Server Test"
+        android:backgroundTint="#4E5467"
+        android:textSize="12sp"
+        android:textColor="#FFFFFF"
+        android:layout_marginBottom="6dp"/>
+
+    <TextView
+        android:id="@+id/tvCurrentServerStatus"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Server: Chưa cấu hình"
+        android:textColor="#FFA726"
+        android:textSize="11sp"
+        android:gravity="center"/>
 </LinearLayout>
