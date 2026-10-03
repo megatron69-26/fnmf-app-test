@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Chỉ cho phép cleartext traffic tới loopback cục bộ (127.0.0.1 và localhost) trong bản Debug -->
+    <!-- Chỉ cho phép cleartext traffic tới loopback cục bộ (127.0.0.1, localhost và 10.0.2.2 máy ảo) trong bản Debug -->
     <!-- Mọi địa chỉ khác tiếp tục bị từ chối cleartext theo mặc định an toàn -->
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">127.0.0.1</domain>
         <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
     </domain-config>
 </network-security-config>

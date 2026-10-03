@@ -24,7 +24,7 @@ import retrofit2.Response
  * =====================================================================
  * 1. ĐĂNG NHẬP (LOGIN): Dùng Email & Password
  * 2. ĐĂNG KÝ (REGISTER): Mở màn hình đăng ký riêng
- * 3. KẾT NỐI: Luôn sử dụng Railway Cloud Backend của bản production
+ * 3. KẾT NỐI: Chỉ kết nối máy chủ thử nghiệm cục bộ/tunnel, tuyệt đối chặn kết nối tới Railway Production
  * =====================================================================
  */
 class Activity1 : AppCompatActivity() {

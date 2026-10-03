@@ -21,3 +21,12 @@ local.properties
 
 # Root preview GIFs
 /*.gif
+
+# Secrets, Logs & Artifacts
+.env
+.env.*
+*.env
+*.log
+logs/
+*.jar
+*.aab
