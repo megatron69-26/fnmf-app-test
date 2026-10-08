@@ -287,7 +287,7 @@ class NewsRepository internal constructor(private val context: Context) {
                     // Dọn dẹp các bản ghi cũ chưa được bản địa hóa hợp lệ
                     runCatching {
                         val allInDb = newsDao.getAllNews()
-                        val invalidIds = allInDb.filter { !com.example.nhumonglenh.ui.news.NewsLocalizationPolicy.isEntityFullyLocalized(it) }.map { it.newsId }
+                        val invalidIds = allInDb.filter { it.title.isBlank() && it.originalTitle.isBlank() }.map { it.newsId }
                         if (invalidIds.isNotEmpty()) {
                             newsDao.deleteNewsByIds(invalidIds)
                         }
@@ -463,7 +463,7 @@ class NewsRepository internal constructor(private val context: Context) {
 
         runCatching {
             val allInDb = newsDao.getAllNews()
-            val invalidIds = allInDb.filter { !com.example.nhumonglenh.ui.news.NewsLocalizationPolicy.isEntityFullyLocalized(it) }.map { it.newsId }
+            val invalidIds = allInDb.filter { it.title.isBlank() && it.originalTitle.isBlank() }.map { it.newsId }
             if (invalidIds.isNotEmpty()) {
                 newsDao.deleteNewsByIds(invalidIds)
             }
@@ -478,9 +478,10 @@ class NewsRepository internal constructor(private val context: Context) {
             emptyList()
         }
 
-        // Lọc nghiêm ngặt theo NewsLocalizationPolicy
+        // Ưu tiên bài đã bản địa hóa; nếu Qwen lỗi/chưa dịch, vẫn giữ bài gốc để đọc (fail-closed)
         val validEntities = cachedEntities.filter {
-            com.example.nhumonglenh.ui.news.NewsLocalizationPolicy.isEntityFullyLocalized(it)
+            com.example.nhumonglenh.ui.news.NewsLocalizationPolicy.isEntityFullyLocalized(it) ||
+                    ((it.title.isNotBlank() || it.originalTitle.isNotBlank()) && it.url.isNotBlank())
         }.sortedByDescending {
             // Repair ordering for rows cached by older builds with an unparsed epoch of 0.
             effectivePublishedEpoch(it.publishedAtRaw, it.publishedAt)
