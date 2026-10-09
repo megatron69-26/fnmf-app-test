@@ -511,13 +511,16 @@ class NewsRepository internal constructor(private val context: Context) {
                 emptyList()
             }
 
-            val effectiveTitle = if (entity.displayTitleVi.isNotBlank()) entity.displayTitleVi else entity.title
-            val effectiveSummary = if (entity.displaySummaryVi.isNotBlank()) {
-                entity.displaySummaryVi
-            } else if (entity.summary.isNotBlank()) {
-                entity.summary
-            } else {
-                analysis?.summary ?: ""
+            val effectiveTitle = when {
+                com.example.nhumonglenh.ui.news.NewsLocalizationPolicy.hasVietnameseCharacteristics(entity.displayTitleVi) -> entity.displayTitleVi
+                com.example.nhumonglenh.ui.news.NewsLocalizationPolicy.hasVietnameseCharacteristics(entity.title) -> entity.title
+                else -> "Đang cập nhật"
+            }
+            val effectiveSummary = when {
+                com.example.nhumonglenh.ui.news.NewsLocalizationPolicy.hasVietnameseCharacteristics(entity.displaySummaryVi) -> entity.displaySummaryVi
+                com.example.nhumonglenh.ui.news.NewsLocalizationPolicy.hasVietnameseCharacteristics(entity.summary) -> entity.summary
+                com.example.nhumonglenh.ui.news.NewsLocalizationPolicy.hasVietnameseCharacteristics(analysis?.summary) -> analysis!!.summary
+                else -> "Đang cập nhật"
             }
             val effectivePublisher = if (entity.publisher.isNotBlank()) {
                 entity.publisher
